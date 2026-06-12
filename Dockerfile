@@ -26,7 +26,11 @@ RUN apt-get update && apt-get install -y \
 # Instalar dependencias de Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN playwright install-deps chromium && playwright install chromium
+# INSTALACIÓN ROBUSTA DE PLAYWRIGHT
+# 1. Instalamos los binarios del navegador
+RUN playwright install chromium
+# 2. Instalamos las dependencias del sistema necesarias para esos binarios
+RUN playwright install-deps chromium
 
 # Copiar el código fuente
 COPY bot/ ./bot/
