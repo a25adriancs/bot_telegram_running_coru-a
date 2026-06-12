@@ -213,23 +213,23 @@ async def scrape_carreirasgalegas():
         })
 
     return races
-def scrape_all_sources() -> List[Dict]:
+async def scrape_all_sources() -> List[Dict]:
     """Ejecuta todos los scrapers y devuelve una lista unificada de carreras."""
     all_races = []
 
     print("Scraping atletismo_gal...")
     try:
-        races = scrape_atletismo_gal()
-        all_races.extend(races)
-        print(f"  Found {len(races)} races")
+        races_atletismo = scrape_atletismo_gal()
+        all_races.extend(races_atletismo)
+        print(f"  Found {len(races_atletismo)} races")
     except Exception as e:
         print(f"  Error: {e}")
 
     print("Scraping carreirasgalegas...")
     try:
-        races = scrape_carreirasgalegas()
-        all_races.extend(races)
-        print(f"  Found {len(races)} races")
+        races_carreiras = await scrape_carreirasgalegas() # ¡Faltaba el await!
+        all_races.extend(races_carreiras)
+        print(f"  Found {len(races_carreiras)} races")
     except Exception as e:
         print(f"  Error: {e}")
 

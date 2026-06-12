@@ -8,12 +8,27 @@ from bot.config import TELEGRAM_CHAT_ID
 from telegram.constants import ParseMode
 from datetime import datetime, timedelta
 import re
+from functools import wraps
+import logging
+
+logger = logging.getLogger(__name__)
+
+# 🛡️ EL PORTERO DE DISCOTECA (Decorador de seguridad)
+def restricted(func):
+    """Restringe el uso del bot únicamente a tu ID de Telegram."""
+    @wraps(func)
+    async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        user_id = update.effective_user.id
+        if str(user_id) != str(TELEGRAM_CHAT_ID):
+            logger.warning(f"Acceso denegado al usuario {user_id}.")
+            return # Ignora el mensaje silenciosamente
+        return await func(update, context, *args, **kwargs)
+    return wrapped
 
 async def send_race_notification(race_data: dict, context: ContextTypes.DEFAULT_TYPE):
     """Envía una notificación de nueva carrera con botones inline."""
     chat_id = TELEGRAM_CHAT_ID
     
-    # Formatear mensaje (¡Aquí estaba el error de indentación!)
     message = (
         f"🏃 <b>NUEVA CARRERA DETECTADA</b>\n\n"
         f"📌 <b>{race_data['name']}</b>\n"
@@ -23,7 +38,6 @@ async def send_race_notification(race_data: dict, context: ContextTypes.DEFAULT_
         f"📍 Fuente: {race_data['source']}"
     )
     
-    # Crear botones inline
     keyboard = [
         [
             InlineKeyboardButton("✅ Me apunto", callback_data=f"accept_{race_data['race_id']}"),
@@ -43,54 +57,55 @@ async def send_race_notification(race_data: dict, context: ContextTypes.DEFAULT_
         disable_web_page_preview=True
     )
 
+@restricted # Protegemos el callback
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja los callbacks de los botones inline."""
+    """Maneja los callbacks de los botones inline de forma robusta."""
     query = update.callback_query
+    # Respondemos SIEMPRE a Telegram lo antes posible para que no se quede el relojito cargando
     await query.answer()
     
-    action, race_id = query.data.split('_')
-    race_id = int(race_id)
-    
-    race = get_race_by_id(race_id)
-    if not race:
-        await query.edit_message_text("❌ Carrera no encontrada")
-        return
-    
-    if action == 'accept':
-        # Usuario acepta la carrera
-        set_user_race_status(race_id, 'accepted')
+    try:
+        action, race_id = query.data.split('_')
+        race_id = int(race_id)
         
-        message = (
-            f"✅ *¡Te has apuntado!*\n\n"
-            f"📌 {race['name']}\n"
-            f"📅 {race['date']}\n\n"
-            f"🔗 [Inscripción directa]({race['registration_link']})\n\n"
-            f"Te recordaré 3 días antes de la carrera."
-        )
-        await query.edit_message_text(message, parse_mode='Markdown')
-    
-    elif action == 'reject':
-        # Usuario rechaza la carrera
-        set_user_race_status(race_id, 'rejected')
-        message = f"❌ *No te avisaré más de esta carrera*\n\n📌 {race['name']}"
-        await query.edit_message_text(message, parse_mode='Markdown')
-    
-    elif action == 'pending':
-        # Usuario se lo piensa
-        set_user_race_status(race_id, 'pending')
+        race = get_race_by_id(race_id)
+        if not race:
+            await query.edit_message_text("❌ <i>Esta carrera ya no está disponible en la base de datos.</i>", parse_mode=ParseMode.HTML)
+            return
         
-        # Crear recordatorio para 7 días después
-        reminder_date = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
-        add_pending_reminder(race_id, reminder_date)
+        if action == 'accept':
+            set_user_race_status(race_id, 'accepted')
+            message = (
+                f"✅ *¡Te has apuntado!*\n\n"
+                f"📌 {race['name']}\n"
+                f"📅 {race['date']}\n\n"
+                f"🔗 [Inscripción directa]({race['registration_link']})\n\n"
+                f"Te recordaré 3 días antes de la carrera."
+            )
+            await query.edit_message_text(message, parse_mode='Markdown')
         
-        message = (
-            f"🤔 *Te lo pensarás*\n\n"
-            f"📌 {race['name']}\n"
-            f"📅 {race['date']}\n\n"
-            f"Te recordaré en 7 días."
-        )
-        await query.edit_message_text(message, parse_mode='Markdown')
+        elif action == 'reject':
+            set_user_race_status(race_id, 'rejected')
+            message = f"❌ *No te avisaré más de esta carrera*\n\n📌 {race['name']}"
+            await query.edit_message_text(message, parse_mode='Markdown')
+        
+        elif action == 'pending':
+            set_user_race_status(race_id, 'pending')
+            reminder_date = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+            add_pending_reminder(race_id, reminder_date)
+            message = (
+                f"🤔 *Te lo pensarás*\n\n"
+                f"📌 {race['name']}\n"
+                f"📅 {race['date']}\n\n"
+                f"Te recordaré en 7 días."
+            )
+            await query.edit_message_text(message, parse_mode='Markdown')
+            
+    except Exception as e:
+        logger.error(f"Error procesando callback: {e}")
+        await query.edit_message_text("⚠️ Hubo un error al procesar tu respuesta.")
 
+@restricted # Protegemos el comando
 async def miscorreras_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra las carreras que el usuario ha aceptado."""
     from bot.database import get_accepted_races
@@ -103,7 +118,6 @@ async def miscorreras_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     message = "🏃 *MIS CARRERAS*\n\n"
-    
     for race in races:
         message += (
             f"📌 *{race['name']}*\n"
@@ -112,9 +126,9 @@ async def miscorreras_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"💰 {race['price'] or 'N/A'}\n"
             f"🔗 [Inscripción]({race['registration_link']})\n\n"
         )
-    
     await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
 
+@restricted # Protegemos el comando
 async def registrarmarca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Registra una marca personal: /registrarmarca [nombre] [tiempo] [fecha]"""
     from bot.database import add_personal_record
@@ -134,7 +148,6 @@ async def registrarmarca_command(update: Update, context: ContextTypes.DEFAULT_T
     time = context.args[1]
     date_str = context.args[2]
     
-    # Normalizar fecha
     try:
         parts = date_str.split('/')
         if len(parts) == 3:
@@ -146,7 +159,6 @@ async def registrarmarca_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(message, parse_mode='Markdown')
         return
     
-    # Validar formato de tiempo
     if not re.match(r'^\d{1,2}:\d{2}(:\d{2})?$', time):
         message = "❌ *Formato de tiempo incorrecto*\n\nUsa MM:SS o HH:MM:SS"
         await update.message.reply_text(message, parse_mode='Markdown')
@@ -162,6 +174,7 @@ async def registrarmarca_command(update: Update, context: ContextTypes.DEFAULT_T
     )
     await update.message.reply_text(message, parse_mode='Markdown')
 
+@restricted # Protegemos el comando
 async def historial_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra el historial de marcas de una carrera: /historial [nombre carrera]"""
     from bot.database import get_personal_records
@@ -183,9 +196,7 @@ async def historial_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(message, parse_mode='Markdown')
         return
     
-    # Ordenar por año
     records_sorted = sorted(records, key=lambda x: x['date'])
-    
     message = f"📊 *HISTORIAL: {race_name}*\n\n"
     
     previous_time = None
@@ -197,23 +208,17 @@ async def historial_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if previous_time:
             comparison = compare_times(previous_time, time)
         
-        message += (
-            f"📅 {year}: ⏱️ {time} {comparison}\n"
-        )
-        
+        message += f"📅 {year}: ⏱️ {time} {comparison}\n"
         previous_time = time
     
-    # Mejor marca
     best_record = min(records_sorted, key=lambda x: time_to_seconds(x['time']))
     message += f"\n🏆 *Mejor marca*: {best_record['time']} ({best_record['date'][:4]})"
     
     await update.message.reply_text(message, parse_mode='Markdown')
 
 def compare_times(time1: str, time2: str) -> str:
-    """Compara dos tiempos y devuelve una string con la diferencia."""
     seconds1 = time_to_seconds(time1)
     seconds2 = time_to_seconds(time2)
-    
     diff = abs(seconds2 - seconds1)
     diff_str = seconds_to_time(diff)
     
@@ -225,7 +230,6 @@ def compare_times(time1: str, time2: str) -> str:
         return "➡️ (=)"
 
 def time_to_seconds(time_str: str) -> int:
-    """Convierte un tiempo a segundos."""
     parts = time_str.split(':')
     if len(parts) == 2:
         minutes, seconds = map(int, parts)
@@ -236,16 +240,15 @@ def time_to_seconds(time_str: str) -> int:
     return 0
 
 def seconds_to_time(seconds: int) -> str:
-    """Convierte segundos a formato de tiempo."""
     hours = seconds // 3600
     minutes = (seconds % 3600) // 60
     secs = seconds % 60
-    
     if hours > 0:
         return f"{hours}:{minutes:02d}:{secs:02d}"
     else:
         return f"{minutes}:{secs:02d}"
 
+@restricted # Protegemos el comando start
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Mensaje de bienvenida al iniciar el bot."""
     message = (

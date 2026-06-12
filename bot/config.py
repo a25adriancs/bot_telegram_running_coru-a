@@ -11,3 +11,4 @@ if not TELEGRAM_TOKEN:
 
 if not TELEGRAM_CHAT_ID:
     raise ValueError("TELEGRAM_CHAT_ID no está definido en el archivo .env")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://...")
