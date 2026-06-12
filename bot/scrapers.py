@@ -178,12 +178,13 @@ async def _scrape_carreirasgalegas_async():
     return eventos
 
 
-def scrape_carreirasgalegas():
+async def scrape_carreirasgalegas():
     """Scrapea carreirasgalegas.com, filtrando A Coruña y el mes actual."""
     races = []
 
     try:
-        eventos = asyncio.run(_scrape_carreirasgalegas_async())
+        eventos = await _scrape_carreirasgalegas_async()
+        races = await scrape_carreirasgalegas()
     except ImportError:
         print("  Playwright no instalado, omitiendo carreirasgalegas")
         return races

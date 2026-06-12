@@ -5,6 +5,7 @@ from bot.database import (
     get_race_by_id, add_pending_reminder
 )
 from bot.config import TELEGRAM_CHAT_ID
+from telegram.constants import ParseMode
 from datetime import datetime, timedelta
 import re
 
@@ -12,13 +13,13 @@ async def send_race_notification(race_data: dict, context: ContextTypes.DEFAULT_
     """Envía una notificación de nueva carrera con botones inline."""
     chat_id = TELEGRAM_CHAT_ID
     
-    # Formatear mensaje
+    # Formatear mensaje (¡Aquí estaba el error de indentación!)
     message = (
-        f"🏃 *NUEVA CARRERA DETECTADA*\n\n"
-        f"📌 *{race_data['name']}*\n"
+        f"🏃 <b>NUEVA CARRERA DETECTADA</b>\n\n"
+        f"📌 <b>{race_data['name']}</b>\n"
         f"📅 Fecha: {race_data['date']}\n"
         f"📍 Lugar: {race_data.get('location', 'N/A')}\n"
-        f"🔗 [Más información]({race_data['registration_link']})\n"
+        f"🔗 <a href='{race_data['registration_link']}'>Más información</a>\n"
         f"📍 Fuente: {race_data['source']}"
     )
     
@@ -37,7 +38,7 @@ async def send_race_notification(race_data: dict, context: ContextTypes.DEFAULT_
     await context.bot.send_message(
         chat_id=chat_id,
         text=message,
-        parse_mode='Markdown',
+        parse_mode=ParseMode.HTML,
         reply_markup=reply_markup,
         disable_web_page_preview=True
     )
@@ -244,6 +245,7 @@ def seconds_to_time(seconds: int) -> str:
         return f"{hours}:{minutes:02d}:{secs:02d}"
     else:
         return f"{minutes}:{secs:02d}"
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Mensaje de bienvenida al iniciar el bot."""
     message = (
@@ -258,6 +260,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ Me apunto | ❌ Paso | 🤔 Me lo pienso"
     )
     await update.message.reply_text(message, parse_mode='Markdown')
+
 def get_handlers():
     """Devuelve la lista de handlers para el bot."""
     return [
