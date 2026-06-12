@@ -5,7 +5,7 @@ sys.path.append(os.getcwd())
 import asyncio
 from bot.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 from bot.database import init_db, race_exists, add_race
-from scraper import scrape_all_sources
+from bot.scrapers import scrape_all_sources
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 
