@@ -1,3 +1,7 @@
+import sys
+import os
+# Añade el directorio actual al path de búsqueda de módulos
+sys.path.append(os.getcwd())
 import asyncio
 from bot.config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
 from bot.database import init_db, race_exists, add_race
