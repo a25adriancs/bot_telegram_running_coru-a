@@ -213,7 +213,7 @@ async def scrape_carreirasgalegas():
         })
 
     return races
-async def scrape_all_sources() -> List[Dict]:
+async def scrape_all_sources() -> List[dict]:
     """Ejecuta todos los scrapers y devuelve una lista unificada de carreras."""
     all_races = []
 
