@@ -4,6 +4,7 @@ from typing import List
 import asyncio
 import re
 from datetime import datetime
+from typing import List, Dict
 
 
 def scrape_atletismo_gal() -> List[Dict]:
@@ -213,7 +214,7 @@ async def scrape_carreirasgalegas():
         })
 
     return races
-async def scrape_all_sources() -> List[dict]:
+async def scrape_all_sources() -> List[Dict]:
     """Ejecuta todos los scrapers y devuelve una lista unificada de carreras."""
     all_races = []
 
