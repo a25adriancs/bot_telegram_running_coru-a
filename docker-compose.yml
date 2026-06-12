@@ -9,3 +9,6 @@ services:
       - ./data:/app/data
     env_file:
       - .env
+    # Asegúrate de que las variables de entorno estén en el archivo .env
+    environment:
+      - PYTHONUNBUFFERED=1

@@ -40,6 +40,20 @@ async def main():
         await application.shutdown()
         shutdown_scheduler()
         print("Bot detenido.")
+        from flask import Flask
+from threading import Thread
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot activo"
+
+def run_web_server():
+    app.run(host='0.0.0.0', port=10000)
+
+# Al arrancar tu bot, inicias este hilo en paralelo
+Thread(target=run_web_server).start()
 
 if __name__ == '__main__':
     asyncio.run(main())
