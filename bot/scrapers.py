@@ -1,10 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
-from typing import List
+from typing import List,Dict
 import asyncio
 import re
 from datetime import datetime
-from typing import List, Dict
 
 
 def scrape_atletismo_gal() -> List[Dict]:
