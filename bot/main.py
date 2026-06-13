@@ -13,7 +13,7 @@ def get_db_connection():
         raise ValueError("La variable DATABASE_URL no está configurada.")
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
-# --- FUNCIÓN AUXILIAR PARA ENVIAR MENSAJES VIA HTTP ---
+# --- FUNCIÓN AUXILIAR PARA ENVIAR MENSAJES ---
 def send_telegram_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
@@ -83,29 +83,30 @@ app = Flask(__name__)
 
 @app.route('/api/webhook', methods=['POST'])
 def webhook():
-    if request.method == "POST":
-        try:
-            update = request.get_json()
-            if not update or "message" not in update:
-                return 'OK', 200
-                
-            message = update["message"]
-            chat_id = message["chat"]["id"]
-            text = message.get("text", "")
-            user_first_name = message["from"].get("first_name", "Corredor")
-
-            # Enrutador de comandos manual y síncrono
-            if text.startswith("/start"):
-                handle_start(chat_id, user_first_name)
-            elif text.startswith("/mostrar_carreras"):
-                handle_mostrar_carreras(chat_id)
-                
-        except Exception as e:
-            print(f"ERROR en webhook: {e}")
+    try:
+        update = request.get_json()
+        if not update or "message" not in update:
+            return 'OK', 200
             
+        message = update["message"]
+        chat_id = message["chat"]["id"]
+        text = message.get("text", "")
+        user_first_name = message["from"].get("first_name", "Corredor")
+
+        if text.startswith("/start"):
+            handle_start(chat_id, user_first_name)
+        elif text.startswith("/mostrar_carreras"):
+            handle_mostrar_carreras(chat_id)
+            
+    except Exception as e:
+        print(f"ERROR en webhook: {e}")
+        
     return 'OK', 200
 
 @app.route('/')
 def home():
-    return 'Bot running sychronously'
+    return 'Bot running successfully!'
+
+if __name__ == '__main__':
+    app.run(debug=True)
     
