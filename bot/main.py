@@ -24,7 +24,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
-# --- COMANDO /mostrar_carreras (Corregido para Supabase) ---
+# --- COMANDO /mostrar_carreras ---
 async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 Buscando las últimas carreras en la base de datos...")
     connection = None
@@ -42,53 +42,40 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
             races = cursor.fetchall()
 
         if not races:
-            await update.message.reply_text("🤷‍♂️ No hay carreras futuras disponibles en la base de datos ahora mismo.")
+            await update.message.reply_text(
+                "🤷‍♂️ No hay carreras futuras disponibles en la base de datos ahora mismo.\n\n"
+                "💡 *Nota:* Tu tabla `races` de Supabase está actualmente vacía."
+            )
             return
 
         for race in races:
             fecha_formateada = race['date'].strftime('%d/%m/%Y') if hasattr(race['date'], 'strftime') else race['date']
-            
             race_text = (
                 f"🏁 **{race['name']}**\n"
                 f"📅 Fecha: {fecha_formateada}\n"
                 f"📍 Lugar: {race['location']}\n"
                 f"🔗 [Más información]({race['registration_link']})"
             )
-
             keyboard = [[InlineKeyboardButton("🔗 Ir a la web", url=race['registration_link'])]]
-            
             await update.message.reply_text(
                 race_text, 
                 reply_markup=InlineKeyboardMarkup(keyboard), 
                 parse_mode="Markdown",
                 disable_web_page_preview=True
             )
-            
     except Exception as e:
         await update.message.reply_text(f"❌ Error al consultar las carreras: {e}")
     finally:
         if connection: 
             connection.close()
 
-# --- MANEJADOR DE BOTONES ANTIGUOS (Seguridad) ---
-async def ignorar_botones_antiguos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Evita que el bot falle si el usuario pulsa un botón de un mensaje viejo"""
-    query = update.callback_query
-    await query.answer(text="Este botón ya no está activo. Usa /mostrar_carreras para ver enlaces directos.", show_alert=True)
-
-# --- CONFIGURACIÓN DEL BOT ---
+# --- INSTANCIA DEL BOT ---
 telegram_app = Application.builder().token(os.environ.get("TELEGRAM_TOKEN")).build()
-
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("mostrar_carreras", mostrar_carreras))
-# Añadimos esto para capturar clicks viejos y que el bot no se quede colgado
-telegram_app.add_handler(CallbackQueryHandler(ignorar_botones_antiguos))
 
-# --- SERVER FLASK (Vercel Serverless) ---
+# --- SERVER FLASK ---
 app = Flask(__name__)
-
-loop = asyncio.get_event_loop()
-loop.run_until_complete(telegram_app.initialize())
 
 @app.route('/api/webhook', methods=['POST'])
 def webhook():
@@ -96,10 +83,18 @@ def webhook():
         try:
             update_data = request.get_json()
             if update_data:
-                update = Update.de_json(update_data, telegram_app.bot)
-                loop.run_until_complete(telegram_app.process_update(update))
+                # Usamos asyncio.run para aislar de forma segura la corrutina en cada petición HTTP
+                async def process():
+                    # Asegura que el bot interno esté inicializado antes de procesar
+                    if not telegram_app.running:
+                        await telegram_app.initialize()
+                    
+                    update = Update.de_json(update_data, telegram_app.bot)
+                    await telegram_app.process_update(update)
+                
+                asyncio.run(process())
         except Exception as e:
-            print(f"ERROR procesando update: {e}")
+            print(f"ERROR crítico en webhook: {e}")
             
     return 'OK', 200
 
