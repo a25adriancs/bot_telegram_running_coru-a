@@ -1,11 +1,11 @@
 import os
 import json
 import requests
+import asyncio  # 1. IMPORTANTE: Importar asyncio
 from bot.scrapers import scrape_all_sources
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-
 
 def send_telegram_notification(race):
     message = (
@@ -17,9 +17,6 @@ def send_telegram_notification(race):
         f"📍 Fuente: {race['source']}"
     )
 
-    # Nota: Los botones de callback ("Me apunto", etc.) normalmente requieren 
-    # un bot de Telegram corriendo en segundo plano para escuchar los clicks.
-    # Los dejamos aquí por si ya tienes ese bot programado aparte.
     keyboard = {
         "inline_keyboard": [
             [
@@ -46,21 +43,19 @@ def send_telegram_notification(race):
     except Exception as e:
         print(f"  ERROR enviando a Telegram: {e}")
 
-
 def run():
     print("DEBUG: Iniciando proceso de scraping...")
 
     print("DEBUG: Ejecutando scrape_all_sources...")
     try:
-        races = scrape_all_sources()
+        # 2. IMPORTANTE: Usar asyncio.run() para ejecutar la función asíncrona
+        races = asyncio.run(scrape_all_sources())
     except Exception as e:
         print(f"ERROR en scraping: {e}")
         return
 
     print(f"DEBUG: {len(races)} carreras encontradas en total")
 
-    # Como no hay base de datos para filtrar las repetidas, 
-    # enviamos todas las que el scraper encuentre en esta ejecución.
     for race in races:
         try:
             print(f"  📤 Enviando notificación: {race['name']}")
@@ -70,7 +65,6 @@ def run():
 
     print(f"DEBUG: Proceso terminado. {len(races)} carreras procesadas.")
 
-
 if __name__ == '__main__':
     run()
-    
+
