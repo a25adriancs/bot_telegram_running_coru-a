@@ -31,7 +31,6 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Solución al error de tipos: Añadido '::date' para forzar la conversión de texto a fecha
             query = """
                 SELECT id, name, date, location, registration_link 
                 FROM races 
@@ -47,7 +46,6 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         for race in races:
-            # Formateamos la fecha si viene como objeto date, o la mostramos directa si es texto
             fecha_formateada = race['date'].strftime('%d/%m/%Y') if hasattr(race['date'], 'strftime') else race['date']
             
             race_text = (
@@ -57,7 +55,6 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🔗 [Más información]({race['registration_link']})"
             )
 
-            # Botón simple informativo ya que no guardamos datos de usuarios
             keyboard = [[InlineKeyboardButton("🔗 Ir a la web", url=race['registration_link'])]]
             
             await update.message.reply_text(
@@ -73,12 +70,19 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if connection: 
             connection.close()
 
+# --- MANEJADOR DE BOTONES ANTIGUOS (Seguridad) ---
+async def ignorar_botones_antiguos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Evita que el bot falle si el usuario pulsa un botón de un mensaje viejo"""
+    query = update.callback_query
+    await query.answer(text="Este botón ya no está activo. Usa /mostrar_carreras para ver enlaces directos.", show_alert=True)
+
 # --- CONFIGURACIÓN DEL BOT ---
 telegram_app = Application.builder().token(os.environ.get("TELEGRAM_TOKEN")).build()
 
-# Registramos solo los comandos que realmente vas a usar
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("mostrar_carreras", mostrar_carreras))
+# Añadimos esto para capturar clicks viejos y que el bot no se quede colgado
+telegram_app.add_handler(CallbackQueryHandler(ignorar_botones_antiguos))
 
 # --- SERVER FLASK (Vercel Serverless) ---
 app = Flask(__name__)
@@ -91,14 +95,14 @@ def webhook():
     if request.method == "POST":
         try:
             update_data = request.get_json()
-            update = Update.de_json(update_data, telegram_app.bot)
-            loop.run_until_complete(telegram_app.process_update(update))
+            if update_data:
+                update = Update.de_json(update_data, telegram_app.bot)
+                loop.run_until_complete(telegram_app.process_update(update))
         except Exception as e:
             print(f"ERROR procesando update: {e}")
             
-    return 'OK'
+    return 'OK', 200
 
 @app.route('/')
 def home():
     return 'Bot running'
-            
