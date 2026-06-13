@@ -1,7 +1,7 @@
 import sys
 import os
 import asyncio
-from  bot.scrapers import scrape_all_sources
+from bot.scrapers import scrape_all_sources
 from bot.database import init_db
 
 async def run():
