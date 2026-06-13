@@ -23,9 +23,11 @@ def send_telegram_message(chat_id, text):
         "disable_web_page_preview": True
     }
     try:
-        requests.post(url, json=payload, timeout=10)
+        response = requests.post(url, json=payload, timeout=10)
+        # Forzamos a imprimir el código de estado que nos devuelve Telegram (ej: 200, 401, 400)
+        print(f"DEBUG TELEGRAM RESPONSE: {response.status_code} - {response.text}", flush=True)
     except Exception as e:
-        print(f"Error enviando mensaje: {e}")
+        print(f"Error enviando mensaje a Telegram: {e}", flush=True)
 
 # --- LÓGICA DE LOS COMANDOS ---
 def handle_start(chat_id, user_first_name):
@@ -85,8 +87,8 @@ app = Flask(__name__)
 def webhook():
     try:
         update = request.get_json()
-        # Log para ver en Vercel exactamente qué nos está mandando Telegram
-        print(f"DEBUG UPDATE RECIBIDO: {update}")
+        # Forzamos la salida inmediata al log de Vercel
+        print(f"DEBUG UPDATE RECIBIDO: {update}", flush=True)
         
         if not update or "message" not in update:
             return 'OK', 200
@@ -96,20 +98,17 @@ def webhook():
         text = message.get("text", "").strip()
         user_first_name = message["from"].get("first_name", "Corredor")
 
-        # Mejorado: Comprobamos si el texto CONTIENE el comando al inicio
         if text.startswith("/start"):
             handle_start(chat_id, user_first_name)
         elif text.startswith("/mostrar_carreras"):
             handle_mostrar_carreras(chat_id)
         else:
-            print(f"Texto recibido no es un comando válido: {text}")
+            print(f"Texto recibido no es un comando válido: {text}", flush=True)
             
     except Exception as e:
-        # Si algo falla enviando el mensaje, lo veremos en el log de Vercel
-        print(f"ERROR CRÍTICO EN WEBHOOK: {e}")
+        print(f"ERROR en webhook: {e}", flush=True)
         
     return 'OK', 200
-
 
 @app.route('/')
 def home():
@@ -117,4 +116,3 @@ def home():
 
 if __name__ == '__main__':
     app.run(debug=True)
-    
