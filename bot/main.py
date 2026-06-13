@@ -37,7 +37,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         f"🏃‍♂️ ¡Bienvenido a tu asistente de carreras, {user.first_name}!\n\n"
         "Te avisaré automáticamente cuando aparezcan nuevas carreras de running en A Coruña y Galicia.\n\n"
-        "**Comandos disponibles:**\n"
+        "*Comandos disponibles:*\n"
         "👉 /mostrar_carreras - Ver carreras de la base de datos\n"
         "📋 /miscarreras - Ver tus carreras aceptadas\n"
         "⏱ /registrarmarca - Guardar tu marca en una carrera\n"
