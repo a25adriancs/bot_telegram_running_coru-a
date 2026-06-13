@@ -2,42 +2,22 @@ import asyncio
 from telegram import Update
 from telegram.ext import Application
 from bot.config import TELEGRAM_TOKEN
-from bot.database import init_db
 from bot.handlers import get_handlers
 from flask import Flask, request
 
-# Inicializamos la app fuera de la función para que sea reutilizable
-application = Application.builder().token(TELEGRAM_TOKEN).build()
+# 1. Renombramos a 'telegram_bot' para que Vercel NO la confunda con el servidor web
+telegram_bot = Application.builder().token(TELEGRAM_TOKEN).build()
 
-# Añadimos los handlers una sola vez al cargar el módulo
+# Añadimos los handlers
 for handler in get_handlers():
-    application.add_handler(handler)
+    telegram_bot.add_handler(handler)
 
-# Esta es la función que Vercel llamará cada vez que Telegram envíe algo
 async def handle_webhook(update_data):
-    await application.initialize()
-    update = Update.de_json(update_data, application.bot)
-    await application.process_update(update)
-    app = Flask(__name__)
+    await telegram_bot.initialize()
+    update = Update.de_json(update_data, telegram_bot.bot)
+    await telegram_bot.process_update(update)
 
-@app.route('/api/webhook', methods=['POST'])
-def webhook():
-    update_data = request.get_json()
-    asyncio.run(handle_webhook(update_data))
-    return 'OK'
-
-@app.route('/')
-def home():
-    return 'Bot running'
-3 — Crea vercel.json en la raíz del proyecto
-json{
-  "builds": [
-    { "src": "bot/main.py", "use": "@vercel/python" }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "bot/main.py" }
-  ]
-}
+# 2. ESTA es la variable que Vercel necesita encontrar en el nivel superior
 app = Flask(__name__)
 
 @app.route('/api/webhook', methods=['POST'])
@@ -48,45 +28,4 @@ def webhook():
 
 @app.route('/')
 def home():
-    return 'Bot running'
-3 — Crea vercel.json en la raíz del proyecto
-json{
-  "builds": [
-    { "src": "bot/main.py", "use": "@vercel/python" }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "bot/main.py" }
-  ]
-}
-app = Flask(__name__)
-
-@app.route('/api/webhook', methods=['POST'])
-def webhook():
-    update_data = request.get_json()
-    asyncio.run(handle_webhook(update_data))
-    return 'OK'
-
-@app.route('/')
-def home():
-    return 'Bot running'
-3 — Crea vercel.json en la raíz del proyecto
-json{
-  "builds": [
-    { "src": "bot/main.py", "use": "@vercel/python" }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "bot/main.py" }
-  ]
-}
-
-app = Flask(__name__)
-
-@app.route('/api/webhook', methods=['POST'])
-def webhook():
-    update_data = request.get_json()
-    asyncio.run(handle_webhook(update_data))
-    return 'OK'
-
-@app.route('/')
-def home():
-    return 'Bot running'
+    return 'Bot running en Vercel'
