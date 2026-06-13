@@ -1,35 +1,22 @@
 import os
 import asyncio
-import pymysql
-from urllib.parse import urlparse
+import psycopg2  # Cambiado pymysql por psycopg2 para Supabase
+from psycopg2.extras import RealDictCursor  # Para mantener la compatibilidad con diccionarios
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# --- CONEXIÓN A BASE DE DATOS (Adaptada a tu DATABASE_URL) ---
+# --- CONEXIÓN A BASE DE DATOS (Adaptada a Supabase / PostgreSQL) ---
 def get_db_connection():
     db_url = os.environ.get("DATABASE_URL")
 
-    if db_url:
-        url = urlparse(db_url)
-        return pymysql.connect(
-            host=url.hostname,
-            port=url.port or 3306,
-            user=url.username,
-            password=url.password,
-            database=url.path[1:],
-            ssl_verify_identity=True,
-            cursorclass=pymysql.cursors.DictCursor
-        )
-    else:
-        return pymysql.connect(
-            host=os.environ.get("DB_HOST"),
-            user=os.environ.get("DB_USER"),
-            password=os.environ.get("DB_PASSWORD"),
-            database=os.environ.get("DB_NAME"),
-            ssl_verify_identity=True,
-            cursorclass=pymysql.cursors.DictCursor
-        )
+    if not db_url:
+        raise ValueError("La variable de entorno DATABASE_URL no está configurada en Vercel.")
+        
+    return psycopg2.connect(
+        db_url,
+        cursor_factory=RealDictCursor  # Hace que los resultados se manejen como diccionarios: race['id']
+    )
 
 # --- COMANDO /start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -49,10 +36,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 Buscando las últimas carreras en la base de datos...")
 
+    connection = None
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            cursor.execute("SELECT id, name, date, location FROM races WHERE date >= CURDATE() ORDER BY date ASC LIMIT 5")
+            # Adaptado a PostgreSQL usando CURRENT_DATE en vez de CURDATE()
+            cursor.execute("SELECT id, name, date, location FROM races WHERE date >= CURRENT_DATE ORDER BY date ASC LIMIT 5")
             races = cursor.fetchall()
 
         if not races:
@@ -80,12 +69,13 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error al consultar las carreras: {e}")
     finally:
-        if 'connection' in locals() and connection.open:
+        if connection:
             connection.close()
 
 # --- COMANDO /miscarreras ---
 async def miscarreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    connection = None
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
@@ -110,7 +100,7 @@ async def miscarreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text("📋 Todavía no tienes carreras registradas o hubo un problema con tu perfil.")
     finally:
-        if 'connection' in locals() and connection.open:
+        if connection:
             connection.close()
 
 # --- COMANDO /registrarmarca ---
@@ -138,6 +128,7 @@ async def registrar_marca(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- COMANDO /historial ---
 async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    connection = None
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
@@ -168,11 +159,12 @@ async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 carrera_buscada = " ".join(context.args)
                 await update.message.reply_text(f"🔎 Buscando marcas históricas para: *{carrera_buscada}*...", parse_mode="Markdown")
 
+                # Reemplazado LIKE por ILIKE para que no distinga entre mayúsculas y minúsculas en PostgreSQL
                 query = """
                     SELECT r.name, r.date, ur.time
                     FROM races r
                     JOIN user_races ur ON r.id = ur.race_id
-                    WHERE ur.user_id = %s AND r.name LIKE %s AND ur.status = 'completada'
+                    WHERE ur.user_id = %s AND r.name ILIKE %s AND ur.status = 'completada'
                     ORDER BY r.date DESC
                 """
                 cursor.execute(query, (user_id, f"%{carrera_buscada}%"))
@@ -194,7 +186,7 @@ async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error al consultar el historial: {e}")
     finally:
-        if 'connection' in locals() and connection.open:
+        if connection:
             connection.close()
 
 # --- CONTROLADOR DE BOTONES INTERACTIVOS (CALLBACK) ---
@@ -230,7 +222,7 @@ async def handle_webhook(update_data):
     await telegram_app.process_update(update)
 
 
-# --- APP WEB (Flask) - Lo que Vercel ejecuta ---
+# --- APP WEB (Flask) - Ejecución en Vercel ---
 app = Flask(__name__)
 
 @app.route('/api/webhook', methods=['POST'])
