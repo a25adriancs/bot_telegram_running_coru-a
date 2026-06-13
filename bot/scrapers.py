@@ -9,6 +9,7 @@ from datetime import datetime
 def scrape_atletismo_gal() -> List[Dict]:
     """Scrapea el calendario de carreras de atletismo.gal, filtrando solo
     las de la delegación de A Coruña (provincia)."""
+    
     races = []
     url = "https://atletismo.gal/competicions/"
     headers = {
@@ -16,8 +17,9 @@ def scrape_atletismo_gal() -> List[Dict]:
     }
 
     try:
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, headers=headers, timeout=30000)
         response.raise_for_status()
+        
     except Exception as e:
         print(f"Error fetching {url}: {e}")
         return races
