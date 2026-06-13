@@ -1,4 +1,6 @@
-import os
+
+from flask import Flask, request
+import asyncioimport os
 import pymysql
 from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
