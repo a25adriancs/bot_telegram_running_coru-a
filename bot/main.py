@@ -1,24 +1,19 @@
 import os
 import asyncio
-import psycopg2  # Cambiado pymysql por psycopg2 para Supabase
-from psycopg2.extras import RealDictCursor  # Para mantener la compatibilidad con diccionarios
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# --- CONEXIÓN A BASE DE DATOS (Adaptada a Supabase / PostgreSQL) ---
+# --- CONEXIÓN A BASE DE DATOS (Supabase) ---
 def get_db_connection():
     db_url = os.environ.get("DATABASE_URL")
-
     if not db_url:
-        raise ValueError("La variable de entorno DATABASE_URL no está configurada en Vercel.")
-        
-    return psycopg2.connect(
-        db_url,
-        cursor_factory=RealDictCursor  # Hace que los resultados se manejen como diccionarios: race['id']
-    )
+        raise ValueError("La variable DATABASE_URL no está configurada.")
+    return psycopg2.connect(db_url, cursor_factory=RealDictCursor)
 
-# --- COMANDO /start ---
+# --- COMANDOS DEL BOT ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     welcome_text = (
@@ -32,20 +27,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
-# --- COMANDO /mostrar_carreras ---
 async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 Buscando las últimas carreras en la base de datos...")
-
     connection = None
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Adaptado a PostgreSQL usando CURRENT_DATE en vez de CURDATE()
             cursor.execute("SELECT id, name, date, location FROM races WHERE date >= CURRENT_DATE ORDER BY date ASC LIMIT 5")
             races = cursor.fetchall()
 
         if not races:
-            await update.message.reply_text("🤷‍♂️ No hay carreras futuras disponibles en la base de datos ahora mismo.")
+            await update.message.reply_text("🤷‍♂️ No hay carreras futuras disponibles en la base de datos.")
             return
 
         for race in races:
@@ -55,7 +47,6 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"📍 Lugar: {race['location']}\n\n"
                 "¿Te interesa esta carrera?"
             )
-
             keyboard = [
                 [
                     InlineKeyboardButton("✅ Me apunto", callback_data=f"apunto_{race['id']}"),
@@ -63,16 +54,12 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ],
                 [InlineKeyboardButton("🤔 Me lo pienso", callback_data=f"pienso_{race['id']}")]
             ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(race_text, reply_markup=reply_markup, parse_mode="Markdown")
-
+            await update.message.reply_text(race_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     except Exception as e:
-        await update.message.reply_text(f"❌ Error al consultar las carreras: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
     finally:
-        if connection:
-            connection.close()
+        if connection: connection.close()
 
-# --- COMANDO /miscarreras ---
 async def miscarreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     connection = None
@@ -86,126 +73,93 @@ async def miscarreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
             my_races = cursor.fetchall()
 
         if not my_races:
-            await update.message.reply_text(
-                "📋 Tu lista de carreras aceptadas está vacía.\n\n"
-                "Usa /mostrar_carreras y pulsa en **✅ Me apunto**."
-            )
+            await update.message.reply_text("📋 Tu lista de carreras aceptadas está vacía.")
             return
 
         response = "📋 **Tus próximas carreras:**\n\n"
         for race in my_races:
             response += f"• {race['name']} ({race['date'].strftime('%d/%m/%Y')})\n"
         await update.message.reply_text(response, parse_mode="Markdown")
-
     except Exception as e:
-        await update.message.reply_text("📋 Todavía no tienes carreras registradas o hubo un problema con tu perfil.")
+        await update.message.reply_text("📋 Hubo un problema con tu perfil.")
     finally:
-        if connection:
-            connection.close()
+        if connection: connection.close()
 
-# --- COMANDO /registrarmarca ---
 async def registrar_marca(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text(
-            "⏱ **Uso del comando registrar marca:**\n"
-            "Formato: `/registrarmarca [Nombre de Carrera] | [Tu tiempo]`\n\n"
-            "💡 _Ejemplo:_ `/registrarmarca San Silvestre | 45:20`",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text("⏱ Formato: `/registrarmarca [Carrera] | [Tiempo]`", parse_mode="Markdown")
         return
-
     full_text = " ".join(context.args)
     if "|" not in full_text:
-        await update.message.reply_text("⚠️ Recuerda usar la barra vertical `|` para separar el nombre de la carrera de tu marca.")
+        await update.message.reply_text("⚠️ Usa `|` para separar la carrera de tu marca.")
         return
-
     parts = full_text.split("|")
-    carrera = parts[0].strip()
-    tiempo = parts[1].strip()
+    await update.message.reply_text(f"✅ ¡Marca registrada!\n🏃‍♂️ Carrera: *{parts[0].strip()}*\n⏱ Tiempo: *{parts[1].strip()}*", parse_mode="Markdown")
 
-    await update.message.reply_text(f"✅ ¡Marca registrada con éxito!\n🏃‍♂️ Carrera: *{carrera}*\n⏱ Tiempo: *{tiempo}*", parse_mode="Markdown")
-
-# --- COMANDO /historial ---
 async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     connection = None
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
-
             if not context.args:
-                await update.message.reply_text("📊 Buscando tu historial completo de carreras...")
-                query = """
-                    SELECT r.name, r.date, ur.time
-                    FROM races r
-                    JOIN user_races ur ON r.id = ur.race_id
-                    WHERE ur.user_id = %s AND ur.status = 'completada'
-                    ORDER BY r.date DESC
-                """
-                cursor.execute(query, (user_id,))
+                cursor.execute("""
+                    SELECT r.name, r.date, ur.time FROM races r 
+                    JOIN user_races ur ON r.id = ur.race_id 
+                    WHERE ur.user_id = %s AND ur.status = 'completada' ORDER BY r.date DESC
+                """, (user_id,))
                 records = cursor.fetchall()
-
                 if not records:
-                    await update.message.reply_text("🤷‍♂️ Aún no tienes ninguna carrera registrada como completada.")
+                    await update.message.reply_text("🤷‍♂️ No tienes carreras completadas.")
                     return
-
-                response = "📊 **Tu historial completo de carreras:**\n\n"
+                response = "📊 **Tu historial:**\n\n"
                 for rec in records:
-                    fecha = rec['date'].strftime('%d/%m/%Y')
-                    tiempo = rec['time'] if rec['time'] else "Sin tiempo"
-                    response += f"• **{rec['name']}** - {fecha} | ⏱ {tiempo}\n"
-
+                    response += f"• **{rec['name']}** - {rec['date'].strftime('%d/%m/%Y')} | ⏱ {rec['time'] or 'Sin tiempo'}\n"
             else:
-                carrera_buscada = " ".join(context.args)
-                await update.message.reply_text(f"🔎 Buscando marcas históricas para: *{carrera_buscada}*...", parse_mode="Markdown")
-
-                # Reemplazado LIKE por ILIKE para que no distinga entre mayúsculas y minúsculas en PostgreSQL
-                query = """
-                    SELECT r.name, r.date, ur.time
-                    FROM races r
-                    JOIN user_races ur ON r.id = ur.race_id
-                    WHERE ur.user_id = %s AND r.name ILIKE %s AND ur.status = 'completada'
-                    ORDER BY r.date DESC
-                """
-                cursor.execute(query, (user_id, f"%{carrera_buscada}%"))
+                carrera = " ".join(context.args)
+                cursor.execute("""
+                    SELECT r.name, r.date, ur.time FROM races r 
+                    JOIN user_races ur ON r.id = ur.race_id 
+                    WHERE ur.user_id = %s AND r.name ILIKE %s AND ur.status = 'completada' ORDER BY r.date DESC
+                """, (user_id, f"%{carrera}%"))
                 records = cursor.fetchall()
-
                 if not records:
-                    await update.message.reply_text(f"🤷‍♂️ No se encontró ninguna carrera coincidente con '{carrera_buscada}'.")
+                    await update.message.reply_text(f"🤷‍♂️ No encontré nada para '{carrera}'.")
                     return
-
-                response = f"🏃‍♂️ **Evolución por años para '{carrera_buscada}':**\n\n"
+                response = f"🏃‍♂️ **Evolución para '{carrera}':**\n\n"
                 for rec in records:
-                    año = rec['date'].strftime('%Y')
-                    fecha = rec['date'].strftime('%d/%m/%Y')
-                    tiempo = rec['time'] if rec['time'] else "Sin tiempo"
-                    response += f"🗓 **{año}**: ⏱ {tiempo} _({fecha})_\n"
-
+                    response += f"🗓 **{rec['date'].strftime('%Y')}**: ⏱ {rec['time'] or 'Sin tiempo'} _({rec['date'].strftime('%d/%m/%Y')})_\n"
             await update.message.reply_text(response, parse_mode="Markdown")
-
     except Exception as e:
-        await update.message.reply_text(f"❌ Error al consultar el historial: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
     finally:
-        if connection:
-            connection.close()
+        if connection: connection.close()
 
 # --- CONTROLADOR DE BOTONES INTERACTIVOS (CALLBACK) ---
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    action, race_id = query.data.split("_")
+    # Separar la acción del identificador (ID numérico o slug del texto del scraper)
+    action, race_identifier = query.data.split("_", 1)
+
+    # 1. Verificar si viene del scraper (es texto) o de /mostrar_carreras (es numérico)
+    es_numerico = race_identifier.isdigit()
 
     if action == "apunto":
         mensaje = "✅ ¡Guardado! Te has apuntado a esta carrera. Aparecerá en tu /miscarreras."
+        # Aquí puedes añadir tu lógica de inserción en Supabase:
+        # Si es numérico insertas usando race_id, si es de texto guardas con el identificador de texto.
     elif action == "paso":
         mensaje = "❌ Entendido, la he descartado de tu lista."
     elif action == "pienso":
         mensaje = "🤔 Guardada en pendientes. ¡No te lo pienses mucho!"
+    else:
+        mensaje = "Opción no reconocida."
 
     await query.edit_message_text(text=f"{query.message.text}\n\n**Resultado:** {mensaje}", parse_mode="Markdown")
 
-# --- INSTANCIA GLOBAL Y CONFIGURACIÓN DEL BOT DE TELEGRAM ---
+# --- CONFIGURACIÓN DEL BOT ---
 telegram_app = Application.builder().token(os.environ.get("TELEGRAM_TOKEN")).build()
 
 telegram_app.add_handler(CommandHandler("start", start))
@@ -215,21 +169,30 @@ telegram_app.add_handler(CommandHandler("registrarmarca", registrar_marca))
 telegram_app.add_handler(CommandHandler("historial", historial))
 telegram_app.add_handler(CallbackQueryHandler(handle_buttons))
 
-
-async def handle_webhook(update_data):
-    await telegram_app.initialize()
-    update = Update.de_json(update_data, telegram_app.bot)
-    await telegram_app.process_update(update)
-
-
-# --- APP WEB (Flask) - Ejecución en Vercel ---
+# --- SERVER FLASK (Optimizado para Vercel Serverless) ---
 app = Flask(__name__)
+
+# Creamos un bucle de eventos global dedicado para el Webhook
+loop = asyncio.get_event_loop()
+
+# Inicializamos la app de telegram de fondo una sola vez
+loop.run_until_complete(telegram_app.initialize())
 
 @app.route('/api/webhook', methods=['POST'])
 def webhook():
-    asyncio.run(handle_webhook(request.get_json()))
+    if request.method == "POST":
+        try:
+            update_data = request.get_json()
+            update = Update.de_json(update_data, telegram_app.bot)
+            
+            # Ejecutamos el procesamiento de manera síncrona/segura dentro del loop del servidor
+            loop.run_until_complete(telegram_app.process_update(update))
+        except Exception as e:
+            print(f"ERROR procesando update: {e}")
+            
     return 'OK'
 
 @app.route('/')
 def home():
     return 'Bot running'
+        
