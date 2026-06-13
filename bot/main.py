@@ -13,28 +13,27 @@ def get_db_connection():
         raise ValueError("La variable DATABASE_URL no está configurada.")
     return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
-# --- FUNCIÓN AUXILIAR PARA ENVIAR MENSAJES ---
+# --- FUNCIÓN AUXILIAR PARA ENVIAR MENSAJES (Cambiado a HTML) ---
 def send_telegram_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": chat_id,
         "text": text,
-        "parse_mode": "Markdown",
+        "parse_mode": "HTML",  # 🚀 Cambiado a HTML para evitar el error 400 de parseo
         "disable_web_page_preview": True
     }
     try:
         response = requests.post(url, json=payload, timeout=10)
-        # Forzamos a imprimir el código de estado que nos devuelve Telegram (ej: 200, 401, 400)
         print(f"DEBUG TELEGRAM RESPONSE: {response.status_code} - {response.text}", flush=True)
     except Exception as e:
         print(f"Error enviando mensaje a Telegram: {e}", flush=True)
 
-# --- LÓGICA DE LOS COMANDOS ---
+# --- LÓGICA DE LOS COMANDOS (Formato HTML seguro) ---
 def handle_start(chat_id, user_first_name):
     welcome_text = (
         f"🏃‍♂️ ¡Bienvenido, {user_first_name}!\n\n"
         "Te ayudaré a ver las carreras de running disponibles en A Coruña y Galicia.\n\n"
-        "*Comando disponible:*\n"
+        "<b>Comando disponible:</b>\n"
         "👉 /mostrar_carreras - Ver las próximas carreras guardadas"
     )
     send_telegram_message(chat_id, welcome_text)
@@ -60,17 +59,17 @@ def handle_mostrar_carreras(chat_id):
             send_telegram_message(
                 chat_id, 
                 "🤷‍♂️ No hay carreras futuras disponibles en la base de datos ahora mismo.\n\n"
-                "💡 *Nota:* Tu tabla `races` de Supabase está actualmente vacía."
+                "💡 <b>Nota:</b> Tu tabla <code>races</code> de Supabase está actualmente vacía."
             )
             return
 
         for race in races:
             fecha_formateada = race['date'].strftime('%d/%m/%Y') if hasattr(race['date'], 'strftime') else race['date']
             race_text = (
-                f"🏁 *{race['name']}*\n"
+                f"🏁 <b>{race['name']}</b>\n"
                 f"📅 Fecha: {fecha_formateada}\n"
                 f"📍 Lugar: {race['location']}\n"
-                f"🔗 [Más información]({race['registration_link']})"
+                f"🔗 <a href='{race['registration_link']}'>Más información</a>"
             )
             send_telegram_message(chat_id, race_text)
 
@@ -87,7 +86,6 @@ app = Flask(__name__)
 def webhook():
     try:
         update = request.get_json()
-        # Forzamos la salida inmediata al log de Vercel
         print(f"DEBUG UPDATE RECIBIDO: {update}", flush=True)
         
         if not update or "message" not in update:
@@ -116,3 +114,4 @@ def home():
 
 if __name__ == '__main__':
     app.run(debug=True)
+    
