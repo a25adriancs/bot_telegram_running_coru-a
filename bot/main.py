@@ -228,3 +228,17 @@ application.add_handler(CallbackQueryHandler(handle_buttons))
 async def handle_webhook(update_data):
     update = Update.de_json(update_data, application.bot)
     await application.process_update(update)
+    from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route('/api/webhook', methods=['POST'])
+def webhook():
+    import asyncio
+    asyncio.run(application.initialize())
+    asyncio.run(handle_webhook(request.get_json()))
+    return 'OK'
+
+@app.route('/')
+def home():
+    return 'Bot running'
