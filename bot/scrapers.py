@@ -1,10 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
-from typing import List,Dict
+from typing import List, Dict
 import asyncio
 import re
 from datetime import datetime
-
 
 def scrape_atletismo_gal() -> List[Dict]:
     """Scrapea el calendario de carreras de atletismo.gal, filtrando solo
@@ -13,19 +12,17 @@ def scrape_atletismo_gal() -> List[Dict]:
     races = []
     url = "https://atletismo.gal/competicions/"
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 
     try:
         response = requests.get(url, headers=headers, timeout=30000)
         response.raise_for_status()
-        
     except Exception as e:
         print(f"Error fetching {url}: {e}")
         return races
 
     soup = BeautifulSoup(response.text, 'html.parser')
-
     articles = soup.find_all('article', class_='competition')
 
     for article in articles:
@@ -83,6 +80,7 @@ def scrape_atletismo_gal() -> List[Dict]:
         races.append(race)
 
     return races
+
 MESES_GL = {
     'xaneiro': '01', 'xan': '01',
     'febreiro': '02', 'feb': '02',
@@ -111,7 +109,6 @@ PALABRAS_CORUNA = [
     "mesoiro", "ventorrillo", "volta a oza", "melide"
 ]
 
-
 def _normalize_date_gl(fecha_str: str):
     """Convierte 'DD de mes[.] de YYYY' (gallego) a YYYY-MM-DD."""
     match = re.search(r'(\d{1,2})\s+de\s+(\w+)\.?\s+de\s+(\d{4})', fecha_str.lower())
@@ -124,7 +121,6 @@ def _normalize_date_gl(fecha_str: str):
         return None
     return f"{year}-{month}-{day.zfill(2)}"
 
-
 async def _scrape_carreirasgalegas_async():
     from playwright.async_api import async_playwright
 
@@ -132,27 +128,42 @@ async def _scrape_carreirasgalegas_async():
     vistos = set()
     url = "https://www.carreirasgalegas.com/events"
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox"]
-        )
-        context = await browser.new_context(locale="gl-ES")
-        page = await context.new_page()
+    print("DEBUG [CarreirasGalegas]: Iniciando Playwright...")
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            )
+            context = await browser.new_context(
+                locale="gl-ES",
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = await context.new_page()
 
-        try:
-            await page.goto(url, wait_until="networkidle", timeout=45000)
-        except Exception:
-            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            print("DEBUG [CarreirasGalegas]: Navegando a la URL...")
+            # 'domcontentloaded' evita que se quede colgado esperando analytics/trackers pesados
+            await page.goto(url, wait_until="domcontentloaded", timeout=25000)
+            
+            print("DEBUG [CarreirasGalegas]: Esperando contenedor de carreras...")
+            try:
+                await page.wait_for_selector(".results-month", timeout=10000)
+            except Exception:
+                print("DEBUG [CarreirasGalegas]: Aviso: .results-month no apareció, intentando continuar...")
 
-        await page.wait_for_timeout(5000)
-        for _ in range(8):
-            await page.evaluate("window.scrollBy(0, 600)")
-            await page.wait_for_timeout(800)
+            print("DEBUG [CarreirasGalegas]: Desplazando scroll...")
+            for _ in range(5):
+                await page.evaluate("window.scrollBy(0, 800)")
+                await page.wait_for_timeout(400)
 
-        html = await page.content()
-        await browser.close()
+            html = await page.content()
+            await browser.close()
+            print("DEBUG [CarreirasGalegas]: Navegador cerrado correctamente.")
+    except Exception as e:
+        print(f"ERROR CRÍTICO en _scrape_carreirasgalegas_async: {e}")
+        return []
 
+    print("DEBUG [CarreirasGalegas]: Parseando HTML con BeautifulSoup...")
     soup = BeautifulSoup(html, "html.parser")
 
     for tr in soup.select(".results-month tbody tr"):
@@ -179,14 +190,13 @@ async def _scrape_carreirasgalegas_async():
 
     return eventos
 
-
 async def scrape_carreirasgalegas():
     """Scrapea carreirasgalegas.com, filtrando A Coruña y el mes actual."""
     races = []
 
     try:
+        # Ejecutamos la función asíncrona de extracción de datos reales
         eventos = await _scrape_carreirasgalegas_async()
-        races = await scrape_carreirasgalegas()
     except ImportError:
         print("  Playwright no instalado, omitiendo carreirasgalegas")
         return races
@@ -194,6 +204,7 @@ async def scrape_carreirasgalegas():
         print(f"  Error: {e}")
         return races
 
+    # Obtenemos el año y mes actual para el filtro (Ej: '2026-06')
     mes_actual = datetime.now().strftime('%Y-%m')
 
     for e in eventos:
@@ -215,6 +226,7 @@ async def scrape_carreirasgalegas():
         })
 
     return races
+
 async def scrape_all_sources() -> List[Dict]:
     """Ejecuta todos los scrapers y devuelve una lista unificada de carreras."""
     all_races = []
@@ -229,7 +241,7 @@ async def scrape_all_sources() -> List[Dict]:
 
     print("Scraping carreirasgalegas...")
     try:
-        races_carreiras = await scrape_carreirasgalegas() # ¡Faltaba el await!
+        races_carreiras = await scrape_carreirasgalegas()
         all_races.extend(races_carreiras)
         print(f"  Found {len(races_carreiras)} races")
     except Exception as e:
