@@ -1,32 +1,45 @@
 import os
-import asyncio
+import requests
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from flask import Flask, request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # --- CONEXIÓN A BASE DE DATOS (Supabase) ---
 def get_db_connection():
-    db_url = os.environ.get("DATABASE_URL")
-    if not db_url:
+    if not DATABASE_URL:
         raise ValueError("La variable DATABASE_URL no está configurada.")
-    return psycopg2.connect(db_url, cursor_factory=RealDictCursor)
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
-# --- COMANDO /start ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
+# --- FUNCIÓN AUXILIAR PARA ENVIAR MENSAJES VIA HTTP ---
+def send_telegram_message(chat_id, text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": True
+    }
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e:
+        print(f"Error enviando mensaje: {e}")
+
+# --- LÓGICA DE LOS COMANDOS ---
+def handle_start(chat_id, user_first_name):
     welcome_text = (
-        f"🏃‍♂️ ¡Bienvenido, {user.first_name}!\n\n"
+        f"🏃‍♂️ ¡Bienvenido, {user_first_name}!\n\n"
         "Te ayudaré a ver las carreras de running disponibles en A Coruña y Galicia.\n\n"
         "*Comando disponible:*\n"
         "👉 /mostrar_carreras - Ver las próximas carreras guardadas"
     )
-    await update.message.reply_text(welcome_text, parse_mode="Markdown")
+    send_telegram_message(chat_id, welcome_text)
 
-# --- COMANDO /mostrar_carreras ---
-async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔍 Buscando las últimas carreras en la base de datos...")
+def handle_mostrar_carreras(chat_id):
+    send_telegram_message(chat_id, "🔍 Buscando las últimas carreras en la base de datos...")
+    
     connection = None
     try:
         connection = get_db_connection()
@@ -42,7 +55,8 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
             races = cursor.fetchall()
 
         if not races:
-            await update.message.reply_text(
+            send_telegram_message(
+                chat_id, 
                 "🤷‍♂️ No hay carreras futuras disponibles en la base de datos ahora mismo.\n\n"
                 "💡 *Nota:* Tu tabla `races` de Supabase está actualmente vacía."
             )
@@ -51,28 +65,18 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for race in races:
             fecha_formateada = race['date'].strftime('%d/%m/%Y') if hasattr(race['date'], 'strftime') else race['date']
             race_text = (
-                f"🏁 **{race['name']}**\n"
+                f"🏁 *{race['name']}*\n"
                 f"📅 Fecha: {fecha_formateada}\n"
                 f"📍 Lugar: {race['location']}\n"
                 f"🔗 [Más información]({race['registration_link']})"
             )
-            keyboard = [[InlineKeyboardButton("🔗 Ir a la web", url=race['registration_link'])]]
-            await update.message.reply_text(
-                race_text, 
-                reply_markup=InlineKeyboardMarkup(keyboard), 
-                parse_mode="Markdown",
-                disable_web_page_preview=True
-            )
+            send_telegram_message(chat_id, race_text)
+
     except Exception as e:
-        await update.message.reply_text(f"❌ Error al consultar las carreras: {e}")
+        send_telegram_message(chat_id, f"❌ Error al consultar las carreras: {e}")
     finally:
         if connection: 
             connection.close()
-
-# --- INSTANCIA DEL BOT ---
-telegram_app = Application.builder().token(os.environ.get("TELEGRAM_TOKEN")).build()
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(CommandHandler("mostrar_carreras", mostrar_carreras))
 
 # --- SERVER FLASK ---
 app = Flask(__name__)
@@ -81,23 +85,27 @@ app = Flask(__name__)
 def webhook():
     if request.method == "POST":
         try:
-            update_data = request.get_json()
-            if update_data:
-                # Usamos asyncio.run para aislar de forma segura la corrutina en cada petición HTTP
-                async def process():
-                    # Asegura que el bot interno esté inicializado antes de procesar
-                    if not telegram_app.running:
-                        await telegram_app.initialize()
-                    
-                    update = Update.de_json(update_data, telegram_app.bot)
-                    await telegram_app.process_update(update)
+            update = request.get_json()
+            if not update or "message" not in update:
+                return 'OK', 200
                 
-                asyncio.run(process())
+            message = update["message"]
+            chat_id = message["chat"]["id"]
+            text = message.get("text", "")
+            user_first_name = message["from"].get("first_name", "Corredor")
+
+            # Enrutador de comandos manual y síncrono
+            if text.startswith("/start"):
+                handle_start(chat_id, user_first_name)
+            elif text.startswith("/mostrar_carreras"):
+                handle_mostrar_carreras(chat_id)
+                
         except Exception as e:
-            print(f"ERROR crítico en webhook: {e}")
+            print(f"ERROR en webhook: {e}")
             
     return 'OK', 200
 
 @app.route('/')
 def home():
-    return 'Bot running'
+    return 'Bot running sychronously'
+    
