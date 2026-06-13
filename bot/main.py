@@ -1,18 +1,35 @@
 import os
 import pymysql
+from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# --- CONEXIÓN A BASE DE DATOS ---
+# --- CONEXIÓN A BASE DE DATOS (Adaptada a tu DATABASE_URL) ---
 def get_db_connection():
-    return pymysql.connect(
-        host=os.environ.get("DB_HOST"),
-        user=os.environ.get("DB_USER"),
-        password=os.environ.get("DB_PASSWORD"),
-        database=os.environ.get("DB_NAME"),
-        ssl_verify_identity=True,  # Seguridad para bases de datos como Aiven
-        cursorclass=pymysql.cursors.DictCursor
-    )
+    db_url = os.environ.get("DATABASE_URL")
+    
+    if db_url:
+        # Descomponemos de forma automática la URL larga de Aiven/Vercel
+        url = urlparse(db_url)
+        return pymysql.connect(
+            host=url.hostname,
+            port=url.port or 3306,
+            user=url.username,
+            password=url.password,
+            database=url.path[1:],  # Elimina la primera barra / de la ruta
+            ssl_verify_identity=True,
+            cursorclass=pymysql.cursors.DictCursor
+        )
+    else:
+        # Plan B por si acaso se usan variables separadas
+        return pymysql.connect(
+            host=os.environ.get("DB_HOST"),
+            user=os.environ.get("DB_USER"),
+            password=os.environ.get("DB_PASSWORD"),
+            database=os.environ.get("DB_NAME"),
+            ssl_verify_identity=True,
+            cursorclass=pymysql.cursors.DictCursor
+        )
 
 # --- COMANDO /start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -21,7 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🏃‍♂️ ¡Bienvenido a tu asistente de carreras, {user.first_name}!\n\n"
         "Te avisaré automáticamente cuando aparezcan nuevas carreras de running en A Coruña y Galicia.\n\n"
         "**Comandos disponibles:**\n"
-        "👉 /mostrar_carreras - Ver carreras de la base de datos y probar botones\n"
+        "👉 /mostrar_carreras - Ver carreras de la base de datos\n"
         "📋 /miscarreras - Ver tus carreras aceptadas\n"
         "⏱ /registrarmarca - Guardar tu marca en una carrera\n"
         "📊 /historial - Ver tu progreso general o filtrar por carrera"
@@ -35,7 +52,6 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
-            # Selecciona las próximas 5 carreras ordenadas por fecha cercana
             cursor.execute("SELECT id, name, date, location FROM races WHERE date >= CURDATE() ORDER BY date ASC LIMIT 5")
             races = cursor.fetchall()
             
@@ -43,7 +59,6 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("🤷‍♂️ No hay carreras futuras disponibles en la base de datos ahora mismo.")
             return
 
-        # Enviamos cada carrera de forma independiente con su botonera interactiva
         for race in races:
             race_text = (
                 f"🏁 **{race['name']}**\n"
@@ -60,7 +75,6 @@ async def mostrar_carreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🤔 Me lo pienso", callback_data=f"pienso_{race['id']}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            
             await update.message.reply_text(race_text, reply_markup=reply_markup, parse_mode="Markdown")
             
     except Exception as e:
@@ -81,11 +95,10 @@ async def miscarreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             my_races = cursor.fetchall()
         
-        # Evitamos el silencio si la lista está vacía
         if not my_races:
             await update.message.reply_text(
                 "📋 Tu lista de carreras aceptadas está vacía.\n\n"
-                "Usa /mostrar_carreras y pulsa en **✅ Me apunto** en las que te interesen para verlas aquí."
+                "Usa /mostrar_carreras y pulsa en **✅ Me apunto**."
             )
             return
 
@@ -95,7 +108,7 @@ async def miscarreras(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(response, parse_mode="Markdown")
 
     except Exception as e:
-        await update.message.reply_text("📋 Todavía no tienes carreras registradas o hubo un problema al conectar con tu perfil.")
+        await update.message.reply_text("📋 Todavía no tienes carreras registradas o hubo un problema con tu perfil.")
     finally:
         if 'connection' in locals() and connection.open:
             connection.close()
@@ -113,32 +126,18 @@ async def registrar_marca(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     full_text = " ".join(context.args)
     if "|" not in full_text:
-        await update.message.reply_text("⚠️ Recuerda usar la barra vertical `|` para separar de forma segura el nombre de la carrera de tu marca.")
+        await update.message.reply_text("⚠️ Recuerda usar la barra vertical `|` para separar el nombre de la carrera de tu marca.")
         return
         
     parts = full_text.split("|")
     carrera = parts[0].strip()
     tiempo = parts[1].strip()
-    user_id = update.effective_user.id
     
-    try:
-        connection = get_db_connection()
-        with connection.cursor() as cursor:
-            # Aquí guardarías o actualizarías la tabla vinculando al usuario
-            # Puedes descomentar y adaptar la lógica SQL real cuando la tengas lista:
-            # cursor.execute("INSERT INTO user_races ... ON DUPLICATE KEY UPDATE status='completada', time=%s", (tiempo,))
-            pass
-        await update.message.reply_text(f"✅ ¡Marca registrada con éxito!\n🏃‍♂️ Carrera: *{carrera}*\n⏱ Tiempo: *{tiempo}*", parse_mode="Markdown")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error al guardar tu marca: {e}")
-    finally:
-        if 'connection' in locals() and connection.open:
-            connection.close()
+    await update.message.reply_text(f"✅ ¡Marca registrada con éxito!\n🏃‍♂️ Carrera: *{carrera}*\n⏱ Tiempo: *{tiempo}*", parse_mode="Markdown")
 
 # --- COMANDO /historial ---
 async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
     try:
         connection = get_db_connection()
         with connection.cursor() as cursor:
@@ -157,7 +156,7 @@ async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 records = cursor.fetchall()
                 
                 if not records:
-                    await update.message.reply_text("🤷‍♂️ Aún no tienes ninguna carrera registrada como completada en tu historial.")
+                    await update.message.reply_text("🤷‍♂️ Aún no tienes ninguna carrera registrada como completada.")
                     return
                 
                 response = "📊 **Tu historial completo de carreras:**\n\n"
@@ -166,7 +165,7 @@ async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     tiempo = rec['time'] if rec['time'] else "Sin tiempo"
                     response += f"• **{rec['name']}** - {fecha} | ⏱ {tiempo}\n"
             
-            # MODO B: Evolución por años para una carrera específica
+            # MODO B: Filtro inteligente por nombre
             else:
                 carrera_buscada = " ".join(context.args)
                 await update.message.reply_text(f"🔎 Buscando marcas históricas para: *{carrera_buscada}*...", parse_mode="Markdown")
@@ -182,7 +181,7 @@ async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 records = cursor.fetchall()
                 
                 if not records:
-                    await update.message.reply_text(f"🤷‍♂️ No se encontró ninguna carrera en tu historial que coincida con '{carrera_buscada}'.")
+                    await update.message.reply_text(f"🤷‍♂️ No se encontró ninguna carrera coincidente con '{carrera_buscada}'.")
                     return
                 
                 response = f"🏃‍♂️ **Evolución por años para '{carrera_buscada}':**\n\n"
@@ -203,32 +202,22 @@ async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- CONTROLADOR DE BOTONES INTERACTIVOS (CALLBACK) ---
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()  # Detiene el icono de carga en Telegram
+    await query.answer()
     
     action, race_id = query.data.split("_")
-    user_id = query.from_user.id
     
-    # Mapeo de respuestas visuales
     if action == "apunto":
-        status_db = "apuntado"
         mensaje = "✅ ¡Guardado! Te has apuntado a esta carrera. Aparecerá en tu /miscarreras."
     elif action == "paso":
-        status_db = "descartado"
         mensaje = "❌ Entendido, la he descartado de tu lista."
     elif action == "pienso":
-        status_db = "pendiente"
         mensaje = "🤔 Guardada en pendientes. ¡No te lo pienses mucho!"
-
-    # Aquí puedes ejecutar tu query SQL para persistir el estado si lo deseas:
-    # INSERT INTO user_races (user_id, race_id, status) VALUES (%s, %s, %s) ON DUPLICATE KEY UPDATE status=%s
     
-    # Modificamos el texto original para que el usuario vea la confirmación del click al instante
     await query.edit_message_text(text=f"{query.message.text}\n\n**Resultado:** {mensaje}", parse_mode="Markdown")
 
-# --- INSTANCIA GLOBAL Y CONFIGURACIÓN DEL HANDLER ---
+# --- INSTANCIA GLOBAL Y CONFIGURACIÓN ---
 application = Application.builder().token(os.environ.get("TELEGRAM_TOKEN")).build()
 
-# Registro formal de comandos y eventos
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("mostrar_carreras", mostrar_carreras))
 application.add_handler(CommandHandler("miscarreras", miscarreras))
@@ -236,7 +225,6 @@ application.add_handler(CommandHandler("registrarmarca", registrar_marca))
 application.add_handler(CommandHandler("historial", historial))
 application.add_handler(CallbackQueryHandler(handle_buttons))
 
-# Función puente invocada directamente por el script del Webhook (api/webhook.py)
 async def handle_webhook(update_data):
     update = Update.de_json(update_data, application.bot)
     await application.process_update(update)
