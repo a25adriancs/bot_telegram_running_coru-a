@@ -85,23 +85,31 @@ app = Flask(__name__)
 def webhook():
     try:
         update = request.get_json()
+        # Log para ver en Vercel exactamente qué nos está mandando Telegram
+        print(f"DEBUG UPDATE RECIBIDO: {update}")
+        
         if not update or "message" not in update:
             return 'OK', 200
             
         message = update["message"]
         chat_id = message["chat"]["id"]
-        text = message.get("text", "")
+        text = message.get("text", "").strip()
         user_first_name = message["from"].get("first_name", "Corredor")
 
+        # Mejorado: Comprobamos si el texto CONTIENE el comando al inicio
         if text.startswith("/start"):
             handle_start(chat_id, user_first_name)
         elif text.startswith("/mostrar_carreras"):
             handle_mostrar_carreras(chat_id)
+        else:
+            print(f"Texto recibido no es un comando válido: {text}")
             
     except Exception as e:
-        print(f"ERROR en webhook: {e}")
+        # Si algo falla enviando el mensaje, lo veremos en el log de Vercel
+        print(f"ERROR CRÍTICO EN WEBHOOK: {e}")
         
     return 'OK', 200
+
 
 @app.route('/')
 def home():
